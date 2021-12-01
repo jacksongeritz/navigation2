@@ -1,0 +1,727 @@
+diff --git a/nav2_lifecycle_manager/CMakeLists.txt b/nav2_lifecycle_manager/CMakeLists.txt
+index e0980df7..ff06d31c 100644
+--- a/nav2_lifecycle_manager/CMakeLists.txt
++++ b/nav2_lifecycle_manager/CMakeLists.txt
+@@ -9,12 +9,10 @@ find_package(nav2_msgs REQUIRED)
+ find_package(nav2_util REQUIRED)
+ find_package(rclcpp_action REQUIRED)
+ find_package(rclcpp_lifecycle REQUIRED)
+-find_package(rclcpp_components REQUIRED)
+ find_package(rclcpp REQUIRED)
+ find_package(std_msgs REQUIRED)
+ find_package(std_srvs REQUIRED)
+ find_package(tf2_geometry_msgs REQUIRED)
+-find_package(bondcpp REQUIRED)
+ 
+ nav2_package()
+ 
+@@ -37,11 +35,9 @@ set(dependencies
+   rclcpp
+   rclcpp_action
+   rclcpp_lifecycle
+-  rclcpp_components
+   std_msgs
+   std_srvs
+   tf2_geometry_msgs
+-  bondcpp
+ )
+ 
+ ament_target_dependencies(${library_name}
+@@ -60,8 +56,6 @@ ament_target_dependencies(lifecycle_manager
+   ${dependencies}
+ )
+ 
+-rclcpp_components_register_nodes(${library_name} "nav2_lifecycle_manager::LifecycleManager")
+-
+ install(TARGETS
+   ${library_name}
+   ARCHIVE DESTINATION lib
+diff --git a/nav2_lifecycle_manager/README.md b/nav2_lifecycle_manager/README.md
+index 9a090500..d2112266 100644
+--- a/nav2_lifecycle_manager/README.md
++++ b/nav2_lifecycle_manager/README.md
+@@ -1,12 +1,11 @@
+ ### Background on lifecycle enabled nodes
+-Using ROS2’s managed/lifecycle nodes feature allows the system startup to ensure that all required nodes have been instantiated correctly before they begin their execution. Using lifecycle nodes also allows nodes to be restarted or replaced on-line. More details about managed nodes can be found on [ROS2 Design website](https://design.ros2.org/articles/node_lifecycle.html). Several nodes in Nav2, such as map_server, planner_server, and controller_server, are lifecycle enabled. These nodes provide the required overrides of the lifecycle functions: ```on_configure()```, ```on_activate()```, ```on_deactivate()```, ```on_cleanup()```, ```on_shutdown()```, and ```on_error()```.
++Using ROS2’s managed/lifecycle nodes feature allows the system startup to ensure that all required nodes have been instantiated correctly before they begin their execution. Using lifecycle nodes also allows nodes to be restarted or replaced on-line. More details about managed nodes can be found on [ROS2 Design website](https://design.ros2.org/articles/node_lifecycle.html). Several nodes in the navigation2 stack, such as map_server, planner_server, and controller_server, are lifecycle enabled. These nodes provide the required overrides of the lifecycle functions: ```on_configure()```, ```on_activate()```, ```on_deactivate()```, ```on_cleanup()```, ```on_shutdown()```, and ```on_error()```.
+ 
+-See its [Configuration Guide Page](https://navigation.ros.org/configuration/packages/configuring-lifecycle.html) for additional parameter descriptions.
+ 
+ ### nav2_lifecycle_manager
+-Nav2's lifecycle manager is used to change the states of the lifecycle nodes in order to achieve a controlled _startup_, _shutdown_, _reset_, _pause_, or _resume_ of the navigation stack. The lifecycle manager presents a ```lifecycle_manager/manage_nodes``` service, from which clients can invoke the startup, shutdown, reset, pause, or resume functions. Based on this service request, the lifecycle manager calls the necessary lifecycle services in the lifecycle managed nodes. Currently, the RVIZ panel uses this ```lifecycle_manager/manage_nodes``` service when user presses the buttons on the RVIZ panel (e.g.,startup, reset, shutdown, etc.), but it is meant to be called on bringup through a production system application.
++Navigation2’s lifecycle manager is used to change the states of the lifecycle nodes in order to achieve a controlled _startup_, _shutdown_, _reset_, _pause_, or _resume_ of the navigation stack. The lifecycle manager presents a ```lifecycle_manager/manage_nodes``` service, from which clients can invoke the startup, shutdown, reset, pause, or resume functions. Based on this service request, the lifecycle manager calls the necessary lifecycle services in the lifecycle managed nodes. Currently, the RVIZ panel uses this ```lifecycle_manager/manage_nodes``` service when user presses the buttons on the RVIZ panel (e.g.,startup, reset, shutdown, etc.).
+ 
+-In order to start the navigation stack and be able to navigate, the necessary nodes must be configured and activated. Thus, for example when _startup_ is requested from the lifecycle manager's manage_nodes service, the lifecycle managers calls _configure()_ and _activate()_ on the lifecycle enabled nodes in the node list. These are all transitioned in ordered groups for bringup transitions, and reverse ordered groups for shutdown transitions.
++In order to start the navigation stack and be able to navigate, the necessary nodes must be configured and activated. Thus, for example when _startup_ is requested from the lifecycle manager's manage_nodes service, the lifecycle managers calls _configure()_ and _activate()_ on the lifecycle enabled nodes in the node list.
+ 
+ The lifecycle manager has a default nodes list for all the nodes that it manages. This list can be changed using the lifecycle manager’s _“node_names”_ parameter.
+ 
+diff --git a/nav2_lifecycle_manager/include/nav2_lifecycle_manager/lifecycle_manager.hpp b/nav2_lifecycle_manager/include/nav2_lifecycle_manager/lifecycle_manager.hpp
+index e218871c..384f33e0 100644
+--- a/nav2_lifecycle_manager/include/nav2_lifecycle_manager/lifecycle_manager.hpp
++++ b/nav2_lifecycle_manager/include/nav2_lifecycle_manager/lifecycle_manager.hpp
+@@ -18,17 +18,14 @@
+ #include <map>
+ #include <memory>
+ #include <string>
+-#include <thread>
+ #include <unordered_map>
+ #include <vector>
+ 
+ #include "nav2_util/lifecycle_service_client.hpp"
+-#include "nav2_util/node_thread.hpp"
+ #include "rclcpp/rclcpp.hpp"
+ #include "std_srvs/srv/empty.hpp"
+ #include "nav2_msgs/srv/manage_lifecycle_nodes.hpp"
+ #include "std_srvs/srv/trigger.hpp"
+-#include "bondcpp/bond.hpp"
+ 
+ namespace nav2_lifecycle_manager
+ {
+@@ -37,7 +34,7 @@ using nav2_msgs::srv::ManageLifecycleNodes;
+ /**
+  * @class nav2_lifecycle_manager::LifecycleManager
+  * @brief Implements service interface to transition the lifecycle nodes of
+- * Nav2 stack. It receives transition request and then uses lifecycle
++ * Navigation2 stack. It receives transition request and then uses lifecycle
+  * interface to change lifecycle node's state.
+  */
+ class LifecycleManager : public rclcpp::Node
+@@ -45,18 +42,16 @@ class LifecycleManager : public rclcpp::Node
+ public:
+   /**
+    * @brief A constructor for nav2_lifecycle_manager::LifecycleManager
+-   * @param options Additional options to control creation of the node.
+    */
+-  explicit LifecycleManager(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
++  LifecycleManager();
+   /**
+    * @brief A destructor for nav2_lifecycle_manager::LifecycleManager
+    */
+   ~LifecycleManager();
+ 
+ protected:
+-  // Callback group used by services and timers
+-  rclcpp::CallbackGroup::SharedPtr callback_group_;
+-  std::unique_ptr<nav2_util::NodeThread> service_thread_;
++  // The ROS node to use when calling lifecycle services
++  rclcpp::Node::SharedPtr service_client_node_;
+ 
+   // The services provided by this node
+   rclcpp::Service<ManageLifecycleNodes>::SharedPtr manager_srv_;
+@@ -126,37 +121,10 @@ protected:
+    */
+   void destroyLifecycleServiceClients();
+ 
+-  // Support function for creating bond timer
+-  /**
+-   * @brief Support function for creating bond timer
+-   */
+-  void createBondTimer();
+-
+-  // Support function for creating bond connection
+-  /**
+-   * @brief Support function for creating bond connections
+-   */
+-  bool createBondConnection(const std::string & node_name);
+-
+-  // Support function for killing bond connections
+-  /**
+-   * @brief Support function for killing bond connections
+-   */
+-  void destroyBondTimer();
+-
+-  // Support function for checking on bond connections
+-  /**
+-   * @ brief Support function for checking on bond connections
+-   * will take down system if there's something non-responsive
+-   */
+-  void checkBondConnections();
+-
+   /**
+    * @brief For a node, transition to the new target state
+    */
+-  bool changeStateForNode(
+-    const std::string & node_name,
+-    std::uint8_t transition);
++  bool changeStateForNode(const std::string & node_name, std::uint8_t transition);
+ 
+   /**
+    * @brief For each node in the map, transition to the new target state
+@@ -169,14 +137,6 @@ protected:
+    */
+   void message(const std::string & msg);
+ 
+-  // Timer thread to look at bond connections
+-  rclcpp::TimerBase::SharedPtr init_timer_;
+-  rclcpp::TimerBase::SharedPtr bond_timer_;
+-  std::chrono::milliseconds bond_timeout_;
+-
+-  // A map of all nodes to check bond connection
+-  std::map<std::string, std::shared_ptr<bond::Bond>> bond_map_;
+-
+   // A map of all nodes to be controlled
+   std::map<std::string, std::shared_ptr<nav2_util::LifecycleServiceClient>> node_map_;
+ 
+diff --git a/nav2_lifecycle_manager/include/nav2_lifecycle_manager/lifecycle_manager_client.hpp b/nav2_lifecycle_manager/include/nav2_lifecycle_manager/lifecycle_manager_client.hpp
+index c5f2be8b..bb597fbd 100644
+--- a/nav2_lifecycle_manager/include/nav2_lifecycle_manager/lifecycle_manager_client.hpp
++++ b/nav2_lifecycle_manager/include/nav2_lifecycle_manager/lifecycle_manager_client.hpp
+@@ -26,7 +26,6 @@
+ #include "std_srvs/srv/empty.hpp"
+ #include "nav2_msgs/srv/manage_lifecycle_nodes.hpp"
+ #include "std_srvs/srv/trigger.hpp"
+-#include "nav2_util/service_client.hpp"
+ 
+ namespace nav2_lifecycle_manager
+ {
+@@ -45,12 +44,8 @@ class LifecycleManagerClient
+ public:
+   /**
+    * @brief A constructor for LifeCycleMangerClient
+-   * @param name Managed node name
+-   * @param parent_node Node that execute the service calls
+    */
+-  explicit LifecycleManagerClient(
+-    const std::string & name,
+-    std::shared_ptr<rclcpp::Node> parent_node);
++  explicit LifecycleManagerClient(const std::string & name);
+ 
+   // Client-side interface to the Nav2 lifecycle manager
+   /**
+@@ -115,8 +110,8 @@ protected:
+   // The node to use for the service call
+   rclcpp::Node::SharedPtr node_;
+ 
+-  std::shared_ptr<nav2_util::ServiceClient<ManageLifecycleNodes>> manager_client_;
+-  std::shared_ptr<nav2_util::ServiceClient<std_srvs::srv::Trigger>> is_active_client_;
++  rclcpp::Client<ManageLifecycleNodes>::SharedPtr manager_client_;
++  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr is_active_client_;
+   std::string manage_service_name_;
+   std::string active_service_name_;
+ };
+diff --git a/nav2_lifecycle_manager/package.xml b/nav2_lifecycle_manager/package.xml
+index e349e3af..d5629020 100644
+--- a/nav2_lifecycle_manager/package.xml
++++ b/nav2_lifecycle_manager/package.xml
+@@ -2,7 +2,7 @@
+ <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+ <package format="3">
+   <name>nav2_lifecycle_manager</name>
+-  <version>1.0.0</version>
++  <version>0.4.7</version>
+   <description>A controller/manager for the lifecycle nodes of the Navigation 2 system</description>
+   <maintainer email="michael.jeronimo@intel.com">Michael Jeronimo</maintainer>
+   <license>Apache-2.0</license>
+@@ -18,7 +18,6 @@
+   <build_depend>std_msgs</build_depend>
+   <build_depend>std_srvs</build_depend>
+   <build_depend>tf2_geometry_msgs</build_depend>
+-  <build_depend>bondcpp</build_depend>
+   <build_depend>nav2_common</build_depend>
+ 
+   <exec_depend>geometry_msgs</exec_depend>
+@@ -29,13 +28,10 @@
+   <exec_depend>rclcpp_lifecycle</exec_depend>
+   <exec_depend>std_msgs</exec_depend>
+   <exec_depend>std_srvs</exec_depend>
+-  <exec_depend>bondcpp</exec_depend>
+   <exec_depend>tf2_geometry_msgs</exec_depend>
+ 
+   <test_depend>ament_lint_auto</test_depend>
+   <test_depend>ament_lint_common</test_depend>
+-  <test_depend>ament_cmake_gtest</test_depend>
+-  <test_depend>ament_cmake_pytest</test_depend>
+ 
+   <export>
+     <build_type>ament_cmake</build_type>
+diff --git a/nav2_lifecycle_manager/src/lifecycle_manager.cpp b/nav2_lifecycle_manager/src/lifecycle_manager.cpp
+index 8474969f..ccd9faae 100644
+--- a/nav2_lifecycle_manager/src/lifecycle_manager.cpp
++++ b/nav2_lifecycle_manager/src/lifecycle_manager.cpp
+@@ -31,36 +31,30 @@ using nav2_util::LifecycleServiceClient;
+ namespace nav2_lifecycle_manager
+ {
+ 
+-LifecycleManager::LifecycleManager(const rclcpp::NodeOptions & options)
+-: Node("lifecycle_manager", options)
++LifecycleManager::LifecycleManager()
++: Node("lifecycle_manager")
+ {
+   RCLCPP_INFO(get_logger(), "Creating");
+ 
+   // The list of names is parameterized, allowing this module to be used with a different set
+   // of nodes
+-  declare_parameter("node_names", rclcpp::PARAMETER_STRING_ARRAY);
++  declare_parameter("node_names");
+   declare_parameter("autostart", rclcpp::ParameterValue(false));
+-  declare_parameter("bond_timeout", 4.0);
+ 
+   node_names_ = get_parameter("node_names").as_string_array();
+   get_parameter("autostart", autostart_);
+-  double bond_timeout_s;
+-  get_parameter("bond_timeout", bond_timeout_s);
+-  bond_timeout_ = std::chrono::duration_cast<std::chrono::milliseconds>(
+-    std::chrono::duration<double>(bond_timeout_s));
+ 
+-  callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive, false);
+   manager_srv_ = create_service<ManageLifecycleNodes>(
+     get_name() + std::string("/manage_nodes"),
+-    std::bind(&LifecycleManager::managerCallback, this, _1, _2, _3),
+-    rmw_qos_profile_services_default,
+-    callback_group_);
++    std::bind(&LifecycleManager::managerCallback, this, _1, _2, _3));
+ 
+   is_active_srv_ = create_service<std_srvs::srv::Trigger>(
+     get_name() + std::string("/is_active"),
+-    std::bind(&LifecycleManager::isActiveCallback, this, _1, _2, _3),
+-    rmw_qos_profile_services_default,
+-    callback_group_);
++    std::bind(&LifecycleManager::isActiveCallback, this, _1, _2, _3));
++
++  auto options = rclcpp::NodeOptions().arguments(
++    {"--ros-args", "-r", std::string("__node:=") + get_name() + "_service_client", "--"});
++  service_client_node_ = std::make_shared<rclcpp::Node>("_", options);
+ 
+   transition_state_map_[Transition::TRANSITION_CONFIGURE] = State::PRIMARY_STATE_INACTIVE;
+   transition_state_map_[Transition::TRANSITION_CLEANUP] = State::PRIMARY_STATE_UNCONFIGURED;
+@@ -76,30 +70,16 @@ LifecycleManager::LifecycleManager(const rclcpp::NodeOptions & options)
+   transition_label_map_[Transition::TRANSITION_UNCONFIGURED_SHUTDOWN] =
+     std::string("Shutting down ");
+ 
+-  init_timer_ = this->create_wall_timer(
+-    0s,
+-    [this]() -> void {
+-      init_timer_->cancel();
+-      createLifecycleServiceClients();
+-      if (autostart_) {
+-        init_timer_ = this->create_wall_timer(
+-          0s,
+-          [this]() -> void {
+-            init_timer_->cancel();
+-            startup();
+-          },
+-          callback_group_);
+-      }
+-    });
+-  auto executor = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+-  executor->add_callback_group(callback_group_, get_node_base_interface());
+-  service_thread_ = std::make_unique<nav2_util::NodeThread>(executor);
++  createLifecycleServiceClients();
++
++  if (autostart_) {
++    startup();
++  }
+ }
+ 
+ LifecycleManager::~LifecycleManager()
+ {
+-  RCLCPP_INFO(get_logger(), "Destroying %s", get_name());
+-  service_thread_.reset();
++  RCLCPP_INFO(get_logger(), "Destroying");
+ }
+ 
+ void
+@@ -142,7 +122,7 @@ LifecycleManager::createLifecycleServiceClients()
+   message("Creating and initializing lifecycle service clients");
+   for (auto & node_name : node_names_) {
+     node_map_[node_name] =
+-      std::make_shared<LifecycleServiceClient>(node_name, shared_from_this());
++      std::make_shared<LifecycleServiceClient>(node_name, service_client_node_);
+   }
+ }
+ 
+@@ -155,41 +135,10 @@ LifecycleManager::destroyLifecycleServiceClients()
+   }
+ }
+ 
+-bool
+-LifecycleManager::createBondConnection(const std::string & node_name)
+-{
+-  const double timeout_ns =
+-    std::chrono::duration_cast<std::chrono::nanoseconds>(bond_timeout_).count();
+-  const double timeout_s = timeout_ns / 1e9;
+-
+-  if (bond_map_.find(node_name) == bond_map_.end() && bond_timeout_.count() > 0.0) {
+-    bond_map_[node_name] =
+-      std::make_shared<bond::Bond>("bond", node_name, shared_from_this());
+-    bond_map_[node_name]->setHeartbeatTimeout(timeout_s);
+-    bond_map_[node_name]->setHeartbeatPeriod(0.10);
+-    bond_map_[node_name]->start();
+-    if (
+-      !bond_map_[node_name]->waitUntilFormed(
+-        rclcpp::Duration(rclcpp::Duration::from_nanoseconds(timeout_ns / 2))))
+-    {
+-      RCLCPP_ERROR(
+-        get_logger(),
+-        "Server %s was unable to be reached after %0.2fs by bond. "
+-        "This server may be misconfigured.",
+-        node_name.c_str(), timeout_s);
+-      return false;
+-    }
+-    RCLCPP_INFO(get_logger(), "Server %s connected with bond.", node_name.c_str());
+-  }
+-
+-  return true;
+-}
+-
+ bool
+ LifecycleManager::changeStateForNode(const std::string & node_name, std::uint8_t transition)
+ {
+   message(transition_label_map_[transition] + node_name);
+-
+   if (!node_map_[node_name]->change_state(transition) ||
+     !(node_map_[node_name]->get_state() == transition_state_map_[transition]))
+   {
+@@ -197,12 +146,6 @@ LifecycleManager::changeStateForNode(const std::string & node_name, std::uint8_t
+     return false;
+   }
+ 
+-  if (transition == Transition::TRANSITION_ACTIVATE) {
+-    return createBondConnection(node_name);
+-  } else if (transition == Transition::TRANSITION_DEACTIVATE) {
+-    bond_map_.erase(node_name);
+-  }
+-
+   return true;
+ }
+ 
+@@ -249,29 +192,23 @@ LifecycleManager::startup()
+   }
+   message("Managed nodes are active");
+   system_active_ = true;
+-  createBondTimer();
+   return true;
+ }
+ 
+ bool
+ LifecycleManager::shutdown()
+ {
+-  system_active_ = false;
+-  destroyBondTimer();
+-
+   message("Shutting down managed nodes...");
+   shutdownAllNodes();
+   destroyLifecycleServiceClients();
+   message("Managed nodes have been shut down");
++  system_active_ = false;
+   return true;
+ }
+ 
+ bool
+ LifecycleManager::reset()
+ {
+-  system_active_ = false;
+-  destroyBondTimer();
+-
+   message("Resetting managed nodes...");
+   // Should transition in reverse order
+   if (!changeStateForAllNodes(Transition::TRANSITION_DEACTIVATE) ||
+@@ -280,25 +217,21 @@ LifecycleManager::reset()
+     RCLCPP_ERROR(get_logger(), "Failed to reset nodes: aborting reset");
+     return false;
+   }
+-
+   message("Managed nodes have been reset");
+-
++  system_active_ = false;
+   return true;
+ }
+ 
+ bool
+ LifecycleManager::pause()
+ {
+-  system_active_ = false;
+-  destroyBondTimer();
+-
+   message("Pausing managed nodes...");
+   if (!changeStateForAllNodes(Transition::TRANSITION_DEACTIVATE)) {
+     RCLCPP_ERROR(get_logger(), "Failed to pause nodes: aborting pause");
+     return false;
+   }
+   message("Managed nodes have been paused");
+-
++  system_active_ = false;
+   return true;
+ }
+ 
+@@ -312,63 +245,12 @@ LifecycleManager::resume()
+   }
+   message("Managed nodes are active");
+   system_active_ = true;
+-  createBondTimer();
+   return true;
+ }
+ 
+-void
+-LifecycleManager::createBondTimer()
+-{
+-  if (bond_timeout_.count() <= 0) {
+-    return;
+-  }
+-
+-  message("Creating bond timer...");
+-
+-  bond_timer_ = this->create_wall_timer(
+-    200ms,
+-    std::bind(&LifecycleManager::checkBondConnections, this),
+-    callback_group_);
+-}
+-
+-void
+-LifecycleManager::destroyBondTimer()
+-{
+-  if (bond_timer_) {
+-    message("Terminating bond timer...");
+-    bond_timer_->cancel();
+-    bond_timer_.reset();
+-  }
+-}
+-
+-void
+-LifecycleManager::checkBondConnections()
+-{
+-  if (!system_active_ || !rclcpp::ok() || bond_map_.empty()) {
+-    return;
+-  }
+-
+-  for (auto & node_name : node_names_) {
+-    if (!rclcpp::ok()) {
+-      return;
+-    }
+-
+-    if (bond_map_[node_name]->isBroken()) {
+-      message(
+-        std::string(
+-          "Have not received a heartbeat from " + node_name + "."));
+-
+-      // if one is down, bring them all down
+-      RCLCPP_ERROR(
+-        get_logger(),
+-        "CRITICAL FAILURE: SERVER %s IS DOWN after not receiving a heartbeat for %i ms."
+-        " Shutting down related nodes.",
+-        node_name.c_str(), static_cast<int>(bond_timeout_.count()));
+-      reset();
+-      return;
+-    }
+-  }
+-}
++// TODO(mjeronimo): This is used to emphasize the major events during system bring-up and
++// shutdown so that the messgaes can be easily seen among the log output. We should replace
++// this with a ROS2-supported way of highlighting console output, if possible.
+ 
+ #define ANSI_COLOR_RESET    "\x1b[0m"
+ #define ANSI_COLOR_BLUE     "\x1b[34m"
+@@ -380,10 +262,3 @@ LifecycleManager::message(const std::string & msg)
+ }
+ 
+ }  // namespace nav2_lifecycle_manager
+-
+-#include "rclcpp_components/register_node_macro.hpp"
+-
+-// Register the component with class_loader.
+-// This acts as a sort of entry point, allowing the component to be discoverable when its library
+-// is being loaded into a running process.
+-RCLCPP_COMPONENTS_REGISTER_NODE(nav2_lifecycle_manager::LifecycleManager)
+diff --git a/nav2_lifecycle_manager/src/lifecycle_manager_client.cpp b/nav2_lifecycle_manager/src/lifecycle_manager_client.cpp
+index 632eb1aa..c7931539 100644
+--- a/nav2_lifecycle_manager/src/lifecycle_manager_client.cpp
++++ b/nav2_lifecycle_manager/src/lifecycle_manager_client.cpp
+@@ -19,28 +19,24 @@
+ #include <string>
+ #include <utility>
+ 
+-#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
++#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+ #include "nav2_util/geometry_utils.hpp"
+ 
+ namespace nav2_lifecycle_manager
+ {
+ using nav2_util::geometry_utils::orientationAroundZAxis;
+ 
+-LifecycleManagerClient::LifecycleManagerClient(
+-  const std::string & name,
+-  std::shared_ptr<rclcpp::Node> parent_node)
++LifecycleManagerClient::LifecycleManagerClient(const std::string & name)
+ {
+   manage_service_name_ = name + std::string("/manage_nodes");
+   active_service_name_ = name + std::string("/is_active");
+ 
+-  // Use parent node for service call and logging
+-  node_ = parent_node;
++  // Create the node to use for all of the service clients
++  node_ = std::make_shared<rclcpp::Node>(name + "_service_client");
+ 
+   // Create the service clients
+-  manager_client_ = std::make_shared<nav2_util::ServiceClient<ManageLifecycleNodes>>(
+-    manage_service_name_, node_);
+-  is_active_client_ = std::make_shared<nav2_util::ServiceClient<std_srvs::srv::Trigger>>(
+-    active_service_name_, node_);
++  manager_client_ = node_->create_client<ManageLifecycleNodes>(manage_service_name_);
++  is_active_client_ = node_->create_client<std_srvs::srv::Trigger>(active_service_name_);
+ }
+ 
+ bool
+@@ -77,27 +73,27 @@ SystemStatus
+ LifecycleManagerClient::is_active(const std::chrono::nanoseconds timeout)
+ {
+   auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+-  auto response = std::make_shared<std_srvs::srv::Trigger::Response>();
+ 
+-  RCLCPP_DEBUG(
++  RCLCPP_INFO(
+     node_->get_logger(), "Waiting for the %s service...",
+     active_service_name_.c_str());
+ 
+-  if (!is_active_client_->wait_for_service(std::chrono::seconds(1))) {
++  if (!is_active_client_->wait_for_service(timeout)) {
+     return SystemStatus::TIMEOUT;
+   }
+ 
+-  RCLCPP_DEBUG(
++  RCLCPP_INFO(
+     node_->get_logger(), "Sending %s request",
+     active_service_name_.c_str());
++  auto future_result = is_active_client_->async_send_request(request);
+ 
+-  try {
+-    response = is_active_client_->invoke(request, timeout);
+-  } catch (std::runtime_error &) {
++  if (rclcpp::spin_until_future_complete(node_, future_result, timeout) !=
++    rclcpp::FutureReturnCode::SUCCESS)
++  {
+     return SystemStatus::TIMEOUT;
+   }
+ 
+-  if (response->success) {
++  if (future_result.get()->success) {
+     return SystemStatus::ACTIVE;
+   } else {
+     return SystemStatus::INACTIVE;
+@@ -110,27 +106,30 @@ LifecycleManagerClient::callService(uint8_t command, const std::chrono::nanoseco
+   auto request = std::make_shared<ManageLifecycleNodes::Request>();
+   request->command = command;
+ 
+-  RCLCPP_DEBUG(
++  RCLCPP_INFO(
+     node_->get_logger(), "Waiting for the %s service...",
+     manage_service_name_.c_str());
+ 
+-  while (!manager_client_->wait_for_service(timeout)) {
++  while (!manager_client_->wait_for_service(std::chrono::seconds(1))) {
+     if (!rclcpp::ok()) {
+       RCLCPP_ERROR(node_->get_logger(), "Client interrupted while waiting for service to appear");
+       return false;
+     }
+-    RCLCPP_DEBUG(node_->get_logger(), "Waiting for service to appear...");
++    RCLCPP_INFO(node_->get_logger(), "Waiting for service to appear...");
+   }
+ 
+-  RCLCPP_DEBUG(
++  RCLCPP_INFO(
+     node_->get_logger(), "Sending %s request",
+     manage_service_name_.c_str());
+-  try {
+-    auto future_result = manager_client_->invoke(request, timeout);
+-    return future_result->success;
+-  } catch (std::runtime_error &) {
++  auto future_result = manager_client_->async_send_request(request);
++
++  if (rclcpp::spin_until_future_complete(node_, future_result, timeout) !=
++    rclcpp::FutureReturnCode::SUCCESS)
++  {
+     return false;
+   }
++
++  return future_result.get()->success;
+ }
+ 
+ }  // namespace nav2_lifecycle_manager
+diff --git a/nav2_lifecycle_manager/src/main.cpp b/nav2_lifecycle_manager/src/main.cpp
+index 94268ae2..a07cfa42 100644
+--- a/nav2_lifecycle_manager/src/main.cpp
++++ b/nav2_lifecycle_manager/src/main.cpp
+@@ -21,7 +21,7 @@ int main(int argc, char ** argv)
+ {
+   rclcpp::init(argc, argv);
+   auto node = std::make_shared<nav2_lifecycle_manager::LifecycleManager>();
+-  rclcpp::spin(node);
++  rclcpp::spin(node->get_node_base_interface());
+   rclcpp::shutdown();
+ 
+   return 0;
+diff --git a/nav2_lifecycle_manager/test/CMakeLists.txt b/nav2_lifecycle_manager/test/CMakeLists.txt
+index 96cbaa5f..e931a5ce 100644
+--- a/nav2_lifecycle_manager/test/CMakeLists.txt
++++ b/nav2_lifecycle_manager/test/CMakeLists.txt
+@@ -14,28 +14,7 @@ ament_add_test(test_lifecycle
+   GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+   COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/launch_lifecycle_test.py"
+   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+-  TIMEOUT 20
++  TIMEOUT 180
+   ENV
+     TEST_EXECUTABLE=$<TARGET_FILE:test_lifecycle_gtest>
+ )
+-
+-ament_add_gtest_executable(test_bond_gtest
+-  test_bond.cpp
+-)
+-
+-target_link_libraries(test_bond_gtest
+-  ${library_name}
+-)
+-
+-ament_target_dependencies(test_bond_gtest
+-  ${dependencies}
+-)
+-
+-ament_add_test(test_bond
+-  GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+-  COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/launch_bond_test.py"
+-  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+-  TIMEOUT 20
+-  ENV
+-    TEST_EXECUTABLE=$<TARGET_FILE:test_bond_gtest>
+-)
+diff --git a/nav2_lifecycle_manager/test/launch_lifecycle_test.py b/nav2_lifecycle_manager/test/launch_lifecycle_test.py
+index c77d58d7..822a4423 100755
+--- a/nav2_lifecycle_manager/test/launch_lifecycle_test.py
++++ b/nav2_lifecycle_manager/test/launch_lifecycle_test.py
+@@ -32,7 +32,6 @@ def generate_launch_description():
+             output='screen',
+             parameters=[{'use_sim_time': False},
+                         {'autostart': False},
+-                        {'bond_timeout': 0.0},
+                         {'node_names': ['lifecycle_node_test']}]),
+     ])
+ 
+diff --git a/nav2_lifecycle_manager/test/test_lifecycle_manager.cpp b/nav2_lifecycle_manager/test/test_lifecycle_manager.cpp
+index 96114f98..983a34ee 100644
+--- a/nav2_lifecycle_manager/test/test_lifecycle_manager.cpp
++++ b/nav2_lifecycle_manager/test/test_lifecycle_manager.cpp
+@@ -82,12 +82,11 @@ private:
+ TEST(LifecycleClientTest, BasicTest)
+ {
+   LifecycleClientTestFixture fix;
+-  auto node = std::make_shared<rclcpp::Node>("lifecycle_manager_test_service_client");
+-  nav2_lifecycle_manager::LifecycleManagerClient client("lifecycle_manager_test", node);
++  nav2_lifecycle_manager::LifecycleManagerClient client("lifecycle_manager_test");
++  EXPECT_TRUE(client.startup());
+   EXPECT_EQ(
+     nav2_lifecycle_manager::SystemStatus::TIMEOUT,
+     client.is_active(std::chrono::nanoseconds(1000)));
+-  EXPECT_TRUE(client.startup());
+   EXPECT_EQ(
+     nav2_lifecycle_manager::SystemStatus::ACTIVE,
+     client.is_active(std::chrono::nanoseconds(1000000000)));
+@@ -105,8 +104,7 @@ TEST(LifecycleClientTest, BasicTest)
+ 
+ TEST(LifecycleClientTest, WithoutFixture)
+ {
+-  auto node = std::make_shared<rclcpp::Node>("lifecycle_manager_test_service_client");
+-  nav2_lifecycle_manager::LifecycleManagerClient client("lifecycle_manager_test", node);
++  nav2_lifecycle_manager::LifecycleManagerClient client("lifecycle_manager_test");
+   EXPECT_EQ(
+     nav2_lifecycle_manager::SystemStatus::TIMEOUT,
+     client.is_active(std::chrono::nanoseconds(1000)));
