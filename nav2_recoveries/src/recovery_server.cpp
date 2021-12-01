@@ -22,8 +22,8 @@
 namespace recovery_server
 {
 
-RecoveryServer::RecoveryServer()
-: LifecycleNode("recoveries_server", "", true),
+RecoveryServer::RecoveryServer(const rclcpp::NodeOptions & options)
+: LifecycleNode("recoveries_server", "", false, options),
   plugin_loader_("nav2_core", "nav2_core::Recovery"),
   default_ids_{"spin", "backup", "wait"},
   default_types_{"nav2_recoveries/Spin", "nav2_recoveries/BackUp", "nav2_recoveries/Wait"}
@@ -36,6 +36,13 @@ RecoveryServer::RecoveryServer()
     rclcpp::ParameterValue(std::string("local_costmap/published_footprint")));
   declare_parameter("cycle_frequency", rclcpp::ParameterValue(10.0));
   declare_parameter("recovery_plugins", default_ids_);
+
+  get_parameter("recovery_plugins", recovery_ids_);
+  if (recovery_ids_ == default_ids_) {
+    for (size_t i = 0; i < default_ids_.size(); ++i) {
+      declare_parameter(default_ids_[i] + ".plugin", default_types_[i]);
+    }
+  }
 
   declare_parameter(
     "global_frame",
@@ -51,6 +58,7 @@ RecoveryServer::RecoveryServer()
 
 RecoveryServer::~RecoveryServer()
 {
+  recoveries_.clear();
 }
 
 nav2_util::CallbackReturn
@@ -65,28 +73,20 @@ RecoveryServer::on_configure(const rclcpp_lifecycle::State & /*state*/)
   tf_->setCreateTimerInterface(timer_interface);
   transform_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_);
 
-  std::string costmap_topic, footprint_topic;
+  std::string costmap_topic, footprint_topic, robot_base_frame;
+  double transform_tolerance;
   this->get_parameter("costmap_topic", costmap_topic);
   this->get_parameter("footprint_topic", footprint_topic);
-  this->get_parameter("transform_tolerance", transform_tolerance_);
+  this->get_parameter("transform_tolerance", transform_tolerance);
+  this->get_parameter("robot_base_frame", robot_base_frame);
   costmap_sub_ = std::make_unique<nav2_costmap_2d::CostmapSubscriber>(
     shared_from_this(), costmap_topic);
   footprint_sub_ = std::make_unique<nav2_costmap_2d::FootprintSubscriber>(
-    shared_from_this(), footprint_topic, 1.0);
+    shared_from_this(), footprint_topic, *tf_, robot_base_frame, transform_tolerance);
 
-  std::string global_frame, robot_base_frame;
-  get_parameter("global_frame", global_frame);
-  get_parameter("robot_base_frame", robot_base_frame);
   collision_checker_ = std::make_shared<nav2_costmap_2d::CostmapTopicCollisionChecker>(
-    *costmap_sub_, *footprint_sub_, *tf_, this->get_name(),
-    global_frame, robot_base_frame, transform_tolerance_);
+    *costmap_sub_, *footprint_sub_, this->get_name());
 
-  get_parameter("recovery_plugins", recovery_ids_);
-  if (recovery_ids_ == default_ids_) {
-    for (size_t i = 0; i < default_ids_.size(); ++i) {
-      declare_parameter(default_ids_[i] + ".plugin", default_types_[i]);
-    }
-  }
   recovery_types_.resize(recovery_ids_.size());
   if (!loadRecoveryPlugins()) {
     return nav2_util::CallbackReturn::FAILURE;
@@ -130,6 +130,9 @@ RecoveryServer::on_activate(const rclcpp_lifecycle::State & /*state*/)
     (*iter)->activate();
   }
 
+  // create bond connection
+  createBond();
+
   return nav2_util::CallbackReturn::SUCCESS;
 }
 
@@ -142,6 +145,9 @@ RecoveryServer::on_deactivate(const rclcpp_lifecycle::State & /*state*/)
   for (iter = recoveries_.begin(); iter != recoveries_.end(); ++iter) {
     (*iter)->deactivate();
   }
+
+  // destroy bond connection
+  destroyBond();
 
   return nav2_util::CallbackReturn::SUCCESS;
 }
@@ -174,3 +180,10 @@ RecoveryServer::on_shutdown(const rclcpp_lifecycle::State &)
 }
 
 }  // end namespace recovery_server
+
+#include "rclcpp_components/register_node_macro.hpp"
+
+// Register the component with class_loader.
+// This acts as a sort of entry point, allowing the component to be discoverable when its library
+// is being loaded into a running process.
+RCLCPP_COMPONENTS_REGISTER_NODE(recovery_server::RecoveryServer)

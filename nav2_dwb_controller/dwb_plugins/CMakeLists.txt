@@ -33,35 +33,32 @@ add_library(standard_traj_generator SHARED
             src/kinematic_parameters.cpp
             src/xy_theta_iterator.cpp)
 ament_target_dependencies(standard_traj_generator ${dependencies})
-# prevent pluginlib from using boost
-target_compile_definitions(standard_traj_generator PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 
 
-if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  # the following line skips the linter which checks for copyrights
-  set(ament_cmake_copyright_FOUND TRUE)
-  ament_lint_auto_find_test_dependencies()
+# if(BUILD_TESTING)
+#   find_package(ament_lint_auto REQUIRED)
+#   # the following line skips the linter which checks for copyrights
+#   set(ament_cmake_copyright_FOUND TRUE)
+#   ament_lint_auto_find_test_dependencies()
 
-  find_package(ament_cmake_gtest REQUIRED)
-  add_subdirectory(test)
-endif()
+#   find_package(ament_cmake_gtest REQUIRED)
+#   add_subdirectory(test)
+# endif()
 
-install(TARGETS standard_traj_generator
-        ARCHIVE DESTINATION lib
-        LIBRARY DESTINATION lib
-        RUNTIME DESTINATION bin
-)
-install(DIRECTORY include/
-        DESTINATION include/
-)
-install(FILES plugins.xml
-        DESTINATION share/${PROJECT_NAME}
-)
+# install(TARGETS standard_traj_generator
+#         ARCHIVE DESTINATION lib
+#         LIBRARY DESTINATION lib
+#         RUNTIME DESTINATION bin
+# )
+# install(DIRECTORY include/
+#         DESTINATION include/
+# )
+# install(FILES plugins.xml
+#         DESTINATION share/${PROJECT_NAME}
+# )
 
 ament_export_include_directories(include)
 ament_export_libraries(standard_traj_generator)
-ament_export_definitions("PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
 pluginlib_export_plugin_description_file(dwb_core plugins.xml)
 
 ament_package()

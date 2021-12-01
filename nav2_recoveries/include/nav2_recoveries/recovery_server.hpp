@@ -31,28 +31,58 @@
 namespace recovery_server
 {
 
+/**
+ * @class recovery_server::RecoveryServer
+ * @brief An server hosting a map of recovery plugins
+ */
 class RecoveryServer : public nav2_util::LifecycleNode
 {
 public:
-  RecoveryServer();
+  /**
+   * @brief A constructor for recovery_server::RecoveryServer
+   * @param options Additional options to control creation of the node.
+   */
+  explicit RecoveryServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
   ~RecoveryServer();
 
+  /**
+   * @brief Loads recovery plugins from parameter file
+   * @return bool if successfully loaded the plugins
+   */
   bool loadRecoveryPlugins();
 
 protected:
-  // Implement the lifecycle interface
+  /**
+   * @brief Configure lifecycle server
+   */
   nav2_util::CallbackReturn on_configure(const rclcpp_lifecycle::State & state) override;
+
+  /**
+   * @brief Activate lifecycle server
+   */
   nav2_util::CallbackReturn on_activate(const rclcpp_lifecycle::State & state) override;
+
+  /**
+   * @brief Deactivate lifecycle server
+   */
   nav2_util::CallbackReturn on_deactivate(const rclcpp_lifecycle::State & state) override;
+
+  /**
+   * @brief Cleanup lifecycle server
+   */
   nav2_util::CallbackReturn on_cleanup(const rclcpp_lifecycle::State & state) override;
+
+  /**
+   * @brief Shutdown lifecycle server
+   */
   nav2_util::CallbackReturn on_shutdown(const rclcpp_lifecycle::State & state) override;
 
   std::shared_ptr<tf2_ros::Buffer> tf_;
   std::shared_ptr<tf2_ros::TransformListener> transform_listener_;
 
   // Plugins
-  std::vector<pluginlib::UniquePtr<nav2_core::Recovery>> recoveries_;
   pluginlib::ClassLoader<nav2_core::Recovery> plugin_loader_;
+  std::vector<pluginlib::UniquePtr<nav2_core::Recovery>> recoveries_;
   std::vector<std::string> default_ids_;
   std::vector<std::string> default_types_;
   std::vector<std::string> recovery_ids_;
@@ -62,8 +92,6 @@ protected:
   std::unique_ptr<nav2_costmap_2d::CostmapSubscriber> costmap_sub_;
   std::unique_ptr<nav2_costmap_2d::FootprintSubscriber> footprint_sub_;
   std::shared_ptr<nav2_costmap_2d::CostmapTopicCollisionChecker> collision_checker_;
-
-  double transform_tolerance_;
 };
 
 }  // namespace recovery_server
