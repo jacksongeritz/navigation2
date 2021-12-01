@@ -19,60 +19,29 @@
  *
  */
 
-#ifndef NAV2_AMCL__ANGLEUTILS_HPP_
-#define NAV2_AMCL__ANGLEUTILS_HPP_
+#ifndef DIFFERENTIAL_MOTION_MODEL_HPP
+#define DIFFERENTIAL_MOTION_MODEL_HPP
 
+#include <sys/types.h>
 #include <math.h>
+#include <algorithm>
+#include "nav2_amcl/motion_model/motion_model.hpp"
+#include "nav2_amcl/angleutils.hpp"
+
 
 namespace nav2_amcl
 {
 
-/*
- * @class angleutils
- * @brief Some utilities for working with angles
- */
-class angleutils
+class DifferentialMotionModel : public nav2_amcl::MotionModel
 {
 public:
-  /*
-   * @brief Normalize angles
-   * @brief z Angle to normalize
-   * @return normalized angle
-   */
-  static double normalize(double z);
+  virtual void initialize(
+    double alpha1, double alpha2, double alpha3, double alpha4,
+    double alpha5);
+  virtual void odometryUpdate(pf_t * pf, const pf_vector_t & pose, const pf_vector_t & delta);
 
-  /*
-   * @brief Find minimum distance between 2 angles
-   * @brief a Angle 1
-   * @brief b Angle 2
-   * @return normalized angle difference
-   */
-  static double angle_diff(double a, double b);
+private:
+  double alpha1_, alpha2_, alpha3_, alpha4_, alpha5_;
 };
-
-inline double
-angleutils::normalize(double z)
-{
-  return atan2(sin(z), cos(z));
-}
-
-inline double
-angleutils::angle_diff(double a, double b)
-{
-  a = normalize(a);
-  b = normalize(b);
-  double d1 = a - b;
-  double d2 = 2 * M_PI - fabs(d1);
-  if (d1 > 0) {
-    d2 *= -1.0;
-  }
-  if (fabs(d1) < fabs(d2)) {
-    return d1;
-  } else {
-    return d2;
-  }
-}
-
 }  // namespace nav2_amcl
-
-#endif  // NAV2_AMCL__ANGLEUTILS_HPP_
+#endif
